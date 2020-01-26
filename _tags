@@ -1,0 +1,16 @@
+
+true: debug, bin_annot, thread
+<src/**>: include
+
+true: package(containers, gen)
+
+# -- possible pkgs to use:
+# bitstring, (interesting - can define protocol declaratively) https://bitstring.software/examples/
+# data-encoding, (interesting, maybe)
+# stdint (interesting, useful)
+
+# - not relevant
+# extprot (interesting, cross-language generation, not power over representation) 
+
+# - don't want to use 
+# bin_prot + pa_bin_prot, (janestreet, depends on base)
