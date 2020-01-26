@@ -36,6 +36,7 @@ module Bits = struct
     | 5 -> c land 0b0000_0100
     | 6 -> c land 0b0000_0010
     | 7 -> c land 0b0000_0001
+    | _ -> failwith "Will not happen"
 
   let explode_byte byte = List.init 8 (fun i -> get i byte)
   
@@ -288,7 +289,14 @@ end
   * insert performance-test code
 *)
 let run () =
+  let open CCOpt.Infix in
   let channel = Stdlib.stdin in
-  let json_repr = Jsonr.Bin.parse_to_json ~channel in
-  failwith "todo print json"
+  Jsonr.Bin.parse_to_json ~channel
+  >|= Ezjsonm.value_to_channel Stdlib.stdout
+
+let () = match run () with
+  | Some () -> ()
+  | None ->
+    print_endline "Some error happened"
+
 

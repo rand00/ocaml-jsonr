@@ -2,7 +2,7 @@
 true: debug, bin_annot, thread
 <src/**>: include
 
-true: package(containers, gen)
+true: package(containers, gen, jsonm, ezjsonm)
 
 # -- possible pkgs to use:
 # bitstring, (interesting - can define protocol declaratively) https://bitstring.software/examples/

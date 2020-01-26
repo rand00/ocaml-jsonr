@@ -1,4 +1,4 @@
-PKG containers gen
+PKG containers gen jsonm ezjsonm
 
 S src/
 B _build/src/
