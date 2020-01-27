@@ -72,7 +72,7 @@ module Jsonr = struct
     end
     
     (*goto possibly check for integer overflow*)
-    let int_of_byte_string :
+    let int_of_byte_string_aux :
       type int_abstract.
         (module IntAbstract with type t = int_abstract)
       -> of_int:(int -> int_abstract)
@@ -97,6 +97,12 @@ module Jsonr = struct
             (acc_int, drop_bits_left - drop_bits_now)
         ) (of_int 0, drop_bits_left)
         |> fun (result, _) -> result
+
+    let int_of_byte_string = int_of_byte_string_aux (module CCInt) ~of_int:CCFun.id
+    let int_of_byte b ~drop_bits_left =
+      b |> CCString.of_char |> int_of_byte_string ~drop_bits_left
+    let int32_of_byte_string = int_of_byte_string_aux (module CCInt32) ~of_int:CCInt32.of_int
+    let int64_of_byte_string = int_of_byte_string_aux (module CCInt64) ~of_int:CCInt64.of_int
     
     let string_of_byte_array bs = bs |> Array.map Char.chr |> CCString.of_array
 
@@ -104,10 +110,10 @@ module Jsonr = struct
       assert (String.length s = 1);
       s.[0]
 
-    let int_of_byte_array ~drop_bits_left bytes =
-      bytes
-      |> CCString.of_array
-      |> int_of_byte_string (module CCInt) ~of_int:CCFun.id ~drop_bits_left
+    (* let int_of_byte_array ~drop_bits_left bytes =
+     *   bytes
+     *   |> CCString.of_array
+     *   |> int_of_byte_string (module CCInt) ~of_int:CCFun.id ~drop_bits_left *)
 
     let magic_number =
       [| 0b11010011; 0b01001010; 0b01010010; 0b01100010 |]
@@ -189,22 +195,23 @@ module Jsonr = struct
 
       (*Dynamic dictionary lookup*)
       | 0::_ ->
-        let index = [| first_byte |] |> int_of_byte_array ~drop_bits_left:1 in
+        let index =
+          CCString.of_char first_byte |> int_of_byte_string ~drop_bits_left:1 in
         ctx.dynamic_dictionary.get index >|= fun str -> 
         `String str
 
       (*Int*)
       | 1::0::_ ->
-        let int = [| first_byte |] |> int_of_byte_array ~drop_bits_left:2 in
+        let int =
+          CCString.of_char first_byte |> int_of_byte_string ~drop_bits_left:2 in
         Some (`Float (float (int-16)))
 
       (*Static dictionary lookup*)
       | 1::1::0::0::0::_ ->
         ctx.take 1 >>= fun second_byte ->
         let index =
-          [| first_byte
-           ; second_byte |> char_of_string |]
-          |> int_of_byte_array ~drop_bits_left:5
+          (CCString.of_char first_byte ^ second_byte)
+          |> int_of_byte_string ~drop_bits_left:5
         in
         ctx.static_dictionary index >|= fun str -> 
         `String str
@@ -213,96 +220,88 @@ module Jsonr = struct
       | 1::1::0::0::1::_ ->
         ctx.take 1 >|= fun second_byte ->
         let int =
-          [| first_byte
-           ; second_byte |> char_of_string |]
-          |> int_of_byte_array ~drop_bits_left:5
+          (CCString.of_char first_byte ^ second_byte)
+          |> int_of_byte_string ~drop_bits_left:5
         in
         `Float (float (int+1008))
 
       (*Array*)
       | 1::1::0::1::0::_ -> 
-        let length = [| first_byte |] |> int_of_byte_array ~drop_bits_left:5 in
+        let length = first_byte |> int_of_byte ~drop_bits_left:5 in
         parse_array ~ctx ~length
 
       (*Object*)
       | 1::1::0::1::1::_ -> 
-        let length = [| first_byte |] |> int_of_byte_array ~drop_bits_left:5 in
+        let length = first_byte |> int_of_byte ~drop_bits_left:5 in
         parse_object ~ctx ~length
 
       (*String*)
       | 1::1::1::0::0::_ -> 
-        let length = [| first_byte |] |> int_of_byte_array ~drop_bits_left:5 in
+        let length = first_byte |> int_of_byte ~drop_bits_left:5 in
         parse_string ~ctx ~length
         
       (*Binary data*)
       | 1::1::1::0::1::_ -> 
-        let length = [| first_byte |] |> int_of_byte_array ~drop_bits_left:5 in
+        let length = first_byte |> int_of_byte ~drop_bits_left:5 in
         parse_binary_data ~ctx ~length
 
       (*Array*)
       | 1::1::1::1::0::0::0::0::_ ->
-        ctx.take 2 >|= int_of_byte_string (module CCInt) ~of_int:CCFun.id
-          ~drop_bits_left:0 >>= fun length ->
+        ctx.take 2 >|= int_of_byte_string ~drop_bits_left:0 >>= fun length ->
         parse_array ~ctx ~length
           
       (*Object*)
       | 1::1::1::1::0::0::0::1::_ ->
-        ctx.take 2 >|= int_of_byte_string (module CCInt) ~of_int:CCFun.id
-          ~drop_bits_left:0 >>= fun length ->
+        ctx.take 2 >|= int_of_byte_string ~drop_bits_left:0 >>= fun length ->
         parse_object ~ctx ~length
 
       (*String*)
       | 1::1::1::1::0::0::1::0::_ ->
-        ctx.take 2 >|= int_of_byte_string (module CCInt) ~of_int:CCFun.id
-          ~drop_bits_left:0 >>= fun length ->
+        ctx.take 2 >|= int_of_byte_string ~drop_bits_left:0 >>= fun length ->
         parse_string ~ctx ~length
 
       (*Binary data*)
       | 1::1::1::1::0::0::1::1::_ ->
-        ctx.take 2 >|= int_of_byte_string (module CCInt) ~of_int:CCFun.id
-          ~drop_bits_left:0 >>= fun length ->
+        ctx.take 2 >|= int_of_byte_string ~drop_bits_left:0 >>= fun length ->
         parse_binary_data ~ctx ~length
 
       (*Array*)
       | 1::1::1::1::0::1::0::0::_ ->
-        ctx.take 6 >|= int_of_byte_string (module CCInt64) ~of_int:CCInt64.of_int
-          ~drop_bits_left:0 >|= CCInt64.to_int >>= fun length -> (*lossy*)
+        ctx.take 6 >|= int64_of_byte_string ~drop_bits_left:0
+        >|= CCInt64.to_int >>= fun length -> (*lossy*)
         parse_array ~ctx ~length
 
       (*Object*)
       | 1::1::1::1::0::1::0::1::_ ->
-        ctx.take 6 >|= int_of_byte_string (module CCInt64) ~of_int:CCInt64.of_int
-          ~drop_bits_left:0 >|= CCInt64.to_int >>= fun length -> (*lossy*)
+        ctx.take 6 >|= int64_of_byte_string ~drop_bits_left:0
+        >|= CCInt64.to_int >>= fun length -> (*lossy*)
         parse_object ~ctx ~length
 
       (*String*)
       | 1::1::1::1::0::1::1::0::_ ->
-        ctx.take 6 >|= int_of_byte_string (module CCInt64) ~of_int:CCInt64.of_int
-          ~drop_bits_left:0 >|= CCInt64.to_int >>= fun length -> (*lossy*)
+        ctx.take 6 >|= int64_of_byte_string ~drop_bits_left:0
+        >|= CCInt64.to_int >>= fun length -> (*lossy*)
         parse_string ~ctx ~length
 
       (*Binary data*)
       | 1::1::1::1::0::1::1::1::_ ->
-        ctx.take 6 >|= int_of_byte_string (module CCInt64) ~of_int:CCInt64.of_int
-          ~drop_bits_left:0 >|= CCInt64.to_int >>= fun length -> (*lossy*)
+        ctx.take 6 >|= int64_of_byte_string ~drop_bits_left:0
+        >|= CCInt64.to_int >>= fun length -> (*lossy*)
         parse_binary_data ~ctx ~length
     
       (*32bit signed integer*)
       | 1::1::1::1::1::0::0::0::_ ->
-        ctx.take 4 >|= int_of_byte_string (module CCInt32) ~of_int:CCInt32.of_int
-          ~drop_bits_left:0 >|= fun int ->
+        ctx.take 4 >|= int32_of_byte_string ~drop_bits_left:0 >|= fun int ->
         `Float (Int32.float_of_bits int)
 
       (*32bit floating point number*)
       | 1::1::1::1::1::0::0::1::_ ->
-        ctx.take 4 >|= int_of_byte_string (module CCInt32) ~of_int:CCInt32.of_int
-          ~drop_bits_left:0 >|= fun int ->
+        ctx.take 4 >|= int32_of_byte_string ~drop_bits_left:0 >|= fun int ->
         `Float (Int32.float_of_bits int)
 
       (*64bit floating point number*)
       | 1::1::1::1::1::0::1::0::_ ->
-        ctx.take 8 >|= int_of_byte_string (module CCInt64) ~of_int:CCInt64.of_int
-          ~drop_bits_left:0 >|= fun int ->
+        ctx.take 8 >|= int64_of_byte_string ~drop_bits_left:0 >|= fun int ->
         `Float (Int64.float_of_bits int)
 
       (*Reserved*)
@@ -332,11 +331,11 @@ module Jsonr = struct
       let take n = ByteStream.take n channel in
       take 4 >>= fun magic_number' ->
       assert (magic_number = magic_number');
-      take 1 >>= fun version' -> (*goo debug*)
+      take 1 >>= fun version' -> 
       assert (version = version');
       take 1 >>= fun _reserved -> 
-      take 2 >|= int_of_byte_string (module CCInt) ~of_int:CCFun.id
-          ~drop_bits_left:4 >>= fun static_dictionary_size ->
+      take 2 >|= int_of_byte_string ~drop_bits_left:4
+      >>= fun static_dictionary_size ->
       assert (static_dictionary_size <= 2048);
       let ctx =
         let static_dictionary = Dictionary.make_static
