@@ -328,7 +328,7 @@ module Jsonr = struct
       (*... *)
       | _ -> None
 
-    let parse_to_json ~static_dictionary_list ~channel =
+    let parse_to_json ~static_dictionary ~channel =
       let take n = ByteStream.take n channel in
       take 4 >>= fun magic_number' ->
       assert (magic_number = magic_number');
@@ -341,7 +341,7 @@ module Jsonr = struct
       let ctx =
         let static_dictionary = Dictionary.make_static
             ~size:static_dictionary_size
-            static_dictionary_list
+            static_dictionary
         and dynamic_dictionary = Dictionary.make_dynamic () in
         { take; static_dictionary; dynamic_dictionary }
       in
@@ -372,7 +372,7 @@ let run () =
     >|= String.split_on_char ','
     >|= Array.of_list
   in
-  Jsonr.Bin.parse_to_json ~static_dictionary_list ~channel 
+  Jsonr.Bin.parse_to_json ~static_dictionary ~channel 
   >|= Ezjsonm.value_to_channel Stdlib.stdout
 
 let () = match run () with
