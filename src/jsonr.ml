@@ -82,7 +82,6 @@ module Jsonr = struct
       = fun int_module ~of_int ~drop_bits_left byte_string ->
         let module IntAbstract =
           (val int_module : IntAbstract with type t = int_abstract) in
-        let open IntAbstract.Infix in
         let byte_length = 8 in
         byte_string
         |> CCString.fold (fun (acc_int, drop_bits_left) byte ->
@@ -91,8 +90,9 @@ module Jsonr = struct
           else
             let drop_bits_now = min byte_length drop_bits_left in
             let filtered_byte = byte |> Bits.drop_left drop_bits_now in
-            let acc_int =
+            let acc_int = IntAbstract.Infix.(
               (acc_int lsl byte_length) lor (of_int (Char.code filtered_byte))
+            )
             in
             (acc_int, drop_bits_left - drop_bits_now)
         ) (of_int 0, drop_bits_left)
