@@ -367,7 +367,7 @@ end
 let run () =
   let open CCOpt.Infix in
   let channel = Stdlib.stdin in
-  let static_dictionary_list =
+  let static_dictionary =
     CCOpt.wrap (fun () -> Sys.argv.(1)) ()
     >|= String.split_on_char ','
     >|= Array.of_list
