@@ -125,8 +125,7 @@ module Jsonr = struct
         | None ->
           assert (size = 0);
           (fun _ -> None)
-        | Some csv ->
-          let dict = String.split_on_char ',' csv |> Array.of_list in
+        | Some dict ->
           assert (size = Array.length dict);
           CCOpt.wrap (fun index -> dict.(index))
 
@@ -137,7 +136,7 @@ module Jsonr = struct
       
       let make_dynamic () =
         let offset = ref 0 in
-        let dict = Array.create 128 "" in
+        let dict = Array.make 128 "" in
         let get = CCOpt.wrap (fun index -> dict.(index)) in
         let push str =
           let length = String.length str in
@@ -329,12 +328,11 @@ module Jsonr = struct
       (*... *)
       | _ -> None
 
-    let parse_to_json ~channel =
-      let static_dictionary_cli_arg = CCOpt.wrap (fun () -> Sys.argv.(1)) () in
+    let parse_to_json ~static_dictionary_list ~channel =
       let take n = ByteStream.take n channel in
-      take (String.length magic_number) >>= fun magic_number' ->
+      take 4 >>= fun magic_number' ->
       assert (magic_number = magic_number');
-      take 1 >>= fun version' ->
+      take 1 >>= fun version' -> (*goo debug*)
       assert (version = version');
       take 1 >>= fun _reserved -> 
       take 2 >|= int_of_byte_string (module CCInt) ~of_int:CCFun.id
@@ -343,7 +341,7 @@ module Jsonr = struct
       let ctx =
         let static_dictionary = Dictionary.make_static
             ~size:static_dictionary_size
-            static_dictionary_cli_arg
+            static_dictionary_list
         and dynamic_dictionary = Dictionary.make_dynamic () in
         { take; static_dictionary; dynamic_dictionary }
       in
@@ -369,7 +367,12 @@ end
 let run () =
   let open CCOpt.Infix in
   let channel = Stdlib.stdin in
-  Jsonr.Bin.parse_to_json ~channel
+  let static_dictionary_list =
+    CCOpt.wrap (fun () -> Sys.argv.(1)) ()
+    >|= String.split_on_char ','
+    >|= Array.of_list
+  in
+  Jsonr.Bin.parse_to_json ~static_dictionary_list ~channel 
   >|= Ezjsonm.value_to_channel Stdlib.stdout
 
 let () = match run () with
