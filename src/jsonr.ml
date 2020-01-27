@@ -79,12 +79,12 @@ module Jsonr = struct
       -> drop_bits_left:int
       -> string
       -> int_abstract
-      = fun int_module ~of_int ~drop_bits_left s ->
+      = fun int_module ~of_int ~drop_bits_left byte_string ->
         let module IntLocal =
           (val int_module : IntAbstract with type t = int_abstract) in
         let open IntLocal.Infix in
         let byte_length = 8 in
-        s
+        byte_string
         |> CCString.fold (fun (acc_int, drop_bits_left) byte ->
           if drop_bits_left >= byte_length then
             (acc_int, drop_bits_left - byte_length)
