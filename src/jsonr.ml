@@ -60,7 +60,7 @@ module Jsonr = struct
 
   module Bin = struct
 
-    module type IntAbstract = sig
+    module type IntAbstractIntf = sig
 
       type t
 
@@ -74,15 +74,15 @@ module Jsonr = struct
     (*goto possibly check for integer overflow*)
     let int_of_byte_string :
       type int_abstract.
-        (module IntAbstract with type t = int_abstract)
+        (module IntAbstractIntf with type t = int_abstract)
       -> of_int:(int -> int_abstract)
       -> drop_bits_left:int
       -> string
       -> int_abstract
       = fun int_module ~of_int ~drop_bits_left byte_string ->
-        let module IntLocal =
-          (val int_module : IntAbstract with type t = int_abstract) in
-        let open IntLocal.Infix in
+        let module IntAbstract =
+          (val int_module : IntAbstractIntf with type t = int_abstract) in
+        let open IntAbstract.Infix in
         let byte_length = 8 in
         byte_string
         |> CCString.fold (fun (acc_int, drop_bits_left) byte ->
