@@ -80,12 +80,12 @@ module Jsonr = struct
       -> string
       -> int_local
       = fun int_module ~of_int ~drop_bits_left s ->
-        let module IntLocal = (val int_module : IntAbstract with type t = int_local) in
+        let module IntLocal =
+          (val int_module : IntAbstract with type t = int_local) in
         let open IntLocal.Infix in
         let byte_length = 8 in
         s
-        |> CCString.to_list
-        |> CCList.fold_left (fun (acc_int, drop_bits_left) byte ->
+        |> CCString.fold (fun (acc_int, drop_bits_left) byte ->
           if drop_bits_left >= byte_length then
             (acc_int, drop_bits_left - byte_length)
           else
@@ -143,7 +143,7 @@ module Jsonr = struct
 
     (*goto find out if this is the correct json implementation *)
     and parse_binary_data ~take ~length = parse_string ~take ~length
-    
+
     and parse_value : take:(int -> string option) -> json option =
       fun ~take ->
       take 1 >|= char_of_string >>= fun first_byte ->
@@ -229,10 +229,9 @@ module Jsonr = struct
 
       (*32bit signed integer*)
       | 1::1::1::1::1::0::0::0::_ ->
-        take 4 >|= int_of_bytestring (module CCInt) ~of_int:CCFun.id
+        take 4 >|= int_of_bytestring (module CCInt32) ~of_int:CCInt32.of_int
           ~drop_bits_left:0 >|= fun int ->
-        `Float (CCFloat.of_int int)
-      (*< goto use 32bit integer repr? - does it give more bits?*)
+        `Float (Int32.float_of_bits int)
 
       (*32bit floating point number*)
       | 1::1::1::1::1::0::0::1::_ ->
@@ -248,7 +247,7 @@ module Jsonr = struct
 
       (*Reserved*)
       | 1::1::1::1::1::0::1::1::_ ->
-        None (*< goto q joakim; should this be failure as now, or have a way to ignore?*)
+        None
 
       (*Null*)
       | 1::1::1::1::1::1::0::0::_ -> 
@@ -287,6 +286,11 @@ end
 
 (*goto todo;
   * insert performance-test code
+    * return median + avg time spent on decoding 
+    * howto/spec; 
+      * take json + static dictionary as cli-params
+      * init: construct a list of stream type clones containing json 
+        * type: gen, seq, sequence ..
 *)
 let run () =
   let open CCOpt.Infix in
