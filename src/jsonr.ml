@@ -10,7 +10,7 @@ type json =
 
 module Bits = struct
 
-  type t = int
+  type t = Char.t
   
   let take_left n byte =
     assert (n >= 0 && n <= 8);
@@ -73,15 +73,15 @@ module Jsonr = struct
     
     (*goto possibly check for integer overflow*)
     let int_of_byte_string :
-      type int_local.
-        (module IntAbstract with type t = int_local)
-      -> of_int:(int -> int_local)
+      type int_abstract.
+        (module IntAbstract with type t = int_abstract)
+      -> of_int:(int -> int_abstract)
       -> drop_bits_left:int
       -> string
-      -> int_local
+      -> int_abstract
       = fun int_module ~of_int ~drop_bits_left s ->
         let module IntLocal =
-          (val int_module : IntAbstract with type t = int_local) in
+          (val int_module : IntAbstract with type t = int_abstract) in
         let open IntLocal.Infix in
         let byte_length = 8 in
         s
