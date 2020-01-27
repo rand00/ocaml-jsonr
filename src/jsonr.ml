@@ -104,9 +104,9 @@ module Jsonr = struct
       assert (String.length s = 1);
       s.[0]
 
-    let int_of_byte_list ~drop_bits_left bytes =
+    let int_of_byte_array ~drop_bits_left bytes =
       bytes
-      |> CCString.of_list 
+      |> CCString.of_array
       |> int_of_byte_string (module CCInt) ~of_int:CCFun.id ~drop_bits_left
 
     let magic_number =
@@ -189,22 +189,22 @@ module Jsonr = struct
 
       (*Dynamic dictionary lookup*)
       | 0::_ ->
-        let index = [ first_byte ] |> int_of_byte_list ~drop_bits_left:1 in
+        let index = [| first_byte |] |> int_of_byte_array ~drop_bits_left:1 in
         ctx.dynamic_dictionary.get index >|= fun str -> 
         `String str
 
       (*Int*)
       | 1::0::_ ->
-        let int = [ first_byte ] |> int_of_byte_list ~drop_bits_left:2 in
+        let int = [| first_byte |] |> int_of_byte_array ~drop_bits_left:2 in
         Some (`Float (float (int-16)))
 
       (*Static dictionary lookup*)
       | 1::1::0::0::0::_ ->
         ctx.take 1 >>= fun second_byte ->
         let index =
-          [ first_byte
-          ; second_byte |> char_of_string ]
-          |> int_of_byte_list ~drop_bits_left:5
+          [| first_byte
+           ; second_byte |> char_of_string |]
+          |> int_of_byte_array ~drop_bits_left:5
         in
         ctx.static_dictionary index >|= fun str -> 
         `String str
@@ -213,30 +213,30 @@ module Jsonr = struct
       | 1::1::0::0::1::_ ->
         ctx.take 1 >|= fun second_byte ->
         let int =
-          [ first_byte
-          ; second_byte |> char_of_string ]
-          |> int_of_byte_list ~drop_bits_left:5
+          [| first_byte
+           ; second_byte |> char_of_string |]
+          |> int_of_byte_array ~drop_bits_left:5
         in
         `Float (float (int+1008))
 
       (*Array*)
       | 1::1::0::1::0::_ -> 
-        let length = [ first_byte ] |> int_of_byte_list ~drop_bits_left:5 in
+        let length = [| first_byte |] |> int_of_byte_array ~drop_bits_left:5 in
         parse_array ~ctx ~length
 
       (*Object*)
       | 1::1::0::1::1::_ -> 
-        let length = [ first_byte ] |> int_of_byte_list ~drop_bits_left:5 in
+        let length = [| first_byte |] |> int_of_byte_array ~drop_bits_left:5 in
         parse_object ~ctx ~length
 
       (*String*)
       | 1::1::1::0::0::_ -> 
-        let length = [ first_byte ] |> int_of_byte_list ~drop_bits_left:5 in
+        let length = [| first_byte |] |> int_of_byte_array ~drop_bits_left:5 in
         parse_string ~ctx ~length
         
       (*Binary data*)
       | 1::1::1::0::1::_ -> 
-        let length = [ first_byte ] |> int_of_byte_list ~drop_bits_left:5 in
+        let length = [| first_byte |] |> int_of_byte_array ~drop_bits_left:5 in
         parse_binary_data ~ctx ~length
 
       (*Array*)
