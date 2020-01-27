@@ -195,15 +195,13 @@ module Jsonr = struct
 
       (*Dynamic dictionary lookup*)
       | 0::_ ->
-        let index =
-          CCString.of_char first_byte |> int_of_byte_string ~drop_bits_left:1 in
+        let index = first_byte |> int_of_byte ~drop_bits_left:1 in
         ctx.dynamic_dictionary.get index >|= fun str -> 
         `String str
 
       (*Int*)
       | 1::0::_ ->
-        let int =
-          CCString.of_char first_byte |> int_of_byte_string ~drop_bits_left:2 in
+        let int = first_byte |> int_of_byte ~drop_bits_left:2 in
         Some (`Float (float (int-16)))
 
       (*Static dictionary lookup*)
