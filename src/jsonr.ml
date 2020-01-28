@@ -44,15 +44,39 @@ end
 
 module ByteStream = struct
 
-  type t = in_channel
+  type string_stream = {
+    string : string;
+    mutable offset : int;
+  }
+  
+  type t = [ `Channel of in_channel | `StringStream of string_stream ]
 
-  let take : int -> t -> string option = fun n channel ->
-    match really_input_string channel n with
-    | exception End_of_file -> None
-    | s -> Some s
+  let take : int -> t -> string option = fun n -> function
+    | `Channel channel -> (
+        match really_input_string channel n with
+        | exception End_of_file -> None
+        | s -> Some s
+      )
+    | `StringStream stream ->
+      if stream.offset + n > String.length stream.string then
+        None
+      else
+        let chunk = String.sub stream.string stream.offset n in
+        stream.offset <- stream.offset + n;
+        Some chunk
 
-  (* let rec gen ~channel =
-   *   take  *)
+  let of_string string = `StringStream {
+    string;
+    offset = 0;
+  }
+
+  let of_channel channel = `Channel channel 
+
+  type source = [ `Channel of in_channel | `String of string ]
+  
+  let of_source : source -> t = function 
+    | `Channel channel -> of_channel channel
+    | `String string -> of_string string
 
 end
 
@@ -325,8 +349,11 @@ module Jsonr = struct
       (*... *)
       | _ -> None
 
-    let parse_to_json ~static_dictionary ~channel =
-      let take n = ByteStream.take n channel in
+    let parse_to_json ~static_dictionary ~source =
+      let take =
+        let stream = source |> ByteStream.of_source in
+        fun n -> stream |> ByteStream.take n
+      in
       take 4 >>= fun magic_number' ->
       assert (magic_number = magic_number');
       take 1 >>= fun version' -> 
@@ -349,6 +376,8 @@ module Jsonr = struct
 end
 
 (*goto todo;
+  * make option-monad into result-monad 
+    * choose error type; polyvar or msg?
   * insert performance-test code
     * return median + avg time spent on decoding 
     * howto/spec; 
@@ -363,13 +392,13 @@ end
 *)
 let run () =
   let open CCOpt.Infix in
-  let channel = Stdlib.stdin in
+  let source = `Channel Stdlib.stdin in
   let static_dictionary =
     CCOpt.wrap (fun () -> Sys.argv.(1)) ()
     >|= String.split_on_char ','
     >|= Array.of_list
   in
-  Jsonr.Bin.parse_to_json ~static_dictionary ~channel 
+  Jsonr.Bin.parse_to_json ~static_dictionary ~source
   >|= Ezjsonm.value_to_channel Stdlib.stdout
 
 let () = match run () with
