@@ -204,7 +204,7 @@ module Jsonr = struct
       if fields |> List.exists CCList.is_empty then None else
         Some (`O (fields |> List.flatten))
 
-    and parse_string ~ctx ?(cache = true) ~length =
+    and parse_string ~ctx ~cache ~length =
       ctx.take length >|= fun str ->
       if cache then ctx.dynamic_dictionary.push str;
       `String str
@@ -260,7 +260,7 @@ module Jsonr = struct
       (*String*)
       | 1::1::1::0::0::_ -> 
         let length = first_byte |> int_of_byte ~drop_bits_left:5 in
-        parse_string ~ctx ~length
+        parse_string ~ctx ~cache:true ~length 
         
       (*Binary data*)
       | 1::1::1::0::1::_ -> 
@@ -280,7 +280,7 @@ module Jsonr = struct
       (*String*)
       | 1::1::1::1::0::0::1::0::_ ->
         ctx.take 2 >|= int_of_byte_string ~drop_bits_left:0 >>= fun length ->
-        parse_string ~ctx ~length
+        parse_string ~ctx ~cache:true ~length
 
       (*Binary data*)
       | 1::1::1::1::0::0::1::1::_ ->
@@ -303,7 +303,7 @@ module Jsonr = struct
       | 1::1::1::1::0::1::1::0::_ ->
         ctx.take 6 >|= int64_of_byte_string ~drop_bits_left:0
         >|= CCInt64.to_int >>= fun length -> (*lossy*)
-        parse_string ~ctx ~length
+        parse_string ~ctx ~cache:true ~length
 
       (*Binary data*)
       | 1::1::1::1::0::1::1::1::_ ->
