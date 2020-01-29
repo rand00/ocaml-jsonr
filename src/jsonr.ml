@@ -204,13 +204,13 @@ module Jsonr = struct
       if fields |> List.exists CCList.is_empty then None else
         Some (`O (fields |> List.flatten))
 
-    and parse_string ~ctx ~length =
+    and parse_string ~ctx ?(cache = true) ~length =
       ctx.take length >|= fun str ->
-      ctx.dynamic_dictionary.push str;
+      if cache then ctx.dynamic_dictionary.push str;
       `String str
 
     (*goto make a 'data-url' in json string*)
-    and parse_binary_data ~ctx ~length = parse_string ~ctx ~length
+    and parse_binary_data ~ctx ~length = parse_string ~ctx ~cache:false ~length
 
     and parse_value : ctx:context -> json option =
       fun ~ctx ->
