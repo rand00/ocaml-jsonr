@@ -1,3 +1,5 @@
+open CCResult.Infix
+open Rresult
 
 (*As seen in jsonm documentation*)
 type json =
@@ -7,6 +9,13 @@ type json =
   | `String of string
   | `A of json list
   | `O of (string * json) list ]
+
+let assert_r test msg =
+  if test then Ok () else
+    let msg = "Assertion '"^msg^"' failed" in
+    Error (`Msg msg)
+
+let catch_r f x ~msg = try Ok (f x) with _ -> R.error_msg msg
 
 module Bits = struct
 
@@ -51,19 +60,21 @@ module ByteStream = struct
   
   type t = [ `Channel of in_channel | `StringStream of string_stream ]
 
-  let take : int -> t -> string option = fun n -> function
-    | `Channel channel -> (
-        match really_input_string channel n with
-        | exception End_of_file -> None
-        | s -> Some s
-      )
-    | `StringStream stream ->
-      if stream.offset + n > String.length stream.string then
-        None
-      else
-        let chunk = String.sub stream.string stream.offset n in
-        stream.offset <- stream.offset + n;
-        Some chunk
+  let take : int -> t -> (string, _) result =
+    fun n -> function
+      | `Channel channel -> (
+          match really_input_string channel n with
+          | exception End_of_file ->
+            R.error_msg "End of stream"
+          | s -> Ok s
+        )
+      | `StringStream stream ->
+        if stream.offset + n > String.length stream.string then
+          R.error_msg "End of stream"
+        else
+          let chunk = String.sub stream.string stream.offset n in
+          stream.offset <- stream.offset + n;
+          Ok chunk
 
   let of_string string = `StringStream {
     string;
@@ -147,27 +158,29 @@ module Jsonr = struct
       [| 0b00000001 |] 
       |> string_of_byte_array
 
-    open CCOpt.Infix 
-
     module Dictionary = struct
 
       let make_static ~size = function
         | None ->
-          assert (size = 0);
-          (fun _ -> None)
+          assert_r (size = 0) "Static dictionary size" >|= fun () ->
+          (fun _ -> R.error_msg "Static dictionary: Wrong index")
         | Some dict ->
-          assert (size = Array.length dict);
-          CCOpt.wrap (fun index -> dict.(index))
-
+          assert_r (size = Array.length dict) "Static dictionary size" >|= fun () ->
+          catch_r (fun index -> dict.(index))
+            ~msg:"Static dictionary: Wrong index"
+      
       type dynamic = {
-        get : int -> string option;
+        get : int -> (string, R.msg) result;
         push : string -> unit;
       }
       
       let make_dynamic () =
+        let wrong_index_msg = "Dynamic dictionary: Wrong index" in
         let offset = ref 0 in
         let dict = Array.make 128 "" in
-        let get = CCOpt.wrap (fun index -> dict.(index)) in
+        let get = catch_r (fun index -> dict.(index))
+          ~msg:wrong_index_msg
+        in
         let push str =
           let length = String.length str in
           if length = 0 || length > 128 then () else (
@@ -180,29 +193,28 @@ module Jsonr = struct
     end
     
     type context = {
-      take : int -> string option;
-      static_dictionary : int -> string option;
+      take : int -> (string, R.msg) result;
+      static_dictionary : int -> (string, R.msg) result;
       dynamic_dictionary : Dictionary.dynamic;
     }
 
     let rec parse_array ~ctx ~length =
-      let list = List.init length (fun _ -> parse_value ~ctx |> CCOpt.to_list) in
-      if list |> List.exists CCList.is_empty then None else
-        Some (`A (list |> List.flatten))
-
+      let list_results = List.init length (fun _ -> parse_value ~ctx) in
+      list_results |> CCResult.flatten_l
+      >|= fun list -> `A list
+                
     and parse_object ~ctx ~length =
-      let fields =
+      let field_results =
         List.init length (fun _ ->
-          ( parse_value ~ctx >>= function
-            | `String str ->
-              ctx.dynamic_dictionary.push str;
-              parse_value ~ctx >|= fun json -> (str, json)
-            | _ -> None )
-          |> CCOpt.to_list
+          parse_value ~ctx >>= function
+          | `String str ->
+            ctx.dynamic_dictionary.push str;
+            parse_value ~ctx >|= fun json -> (str, json)
+          | _ -> R.error_msg "Object key was not a string"
         )
       in
-      if fields |> List.exists CCList.is_empty then None else
-        Some (`O (fields |> List.flatten))
+      field_results |> CCResult.flatten_l
+      >|= fun fields -> `O fields
 
     and parse_string ~ctx ~cache ~length =
       ctx.take length >|= fun str ->
@@ -212,7 +224,7 @@ module Jsonr = struct
     (*goto make a 'data-url' in json string*)
     and parse_binary_data ~ctx ~length = parse_string ~ctx ~cache:false ~length
 
-    and parse_value : ctx:context -> json option =
+    and parse_value : ctx:context -> (json, _) result =
       fun ~ctx ->
       ctx.take 1 >|= char_of_string >>= fun first_byte ->
       match first_byte |> Bits.explode_byte with
@@ -226,7 +238,7 @@ module Jsonr = struct
       (*Int*)
       | 1::0::_ ->
         let int = first_byte |> int_of_byte ~drop_bits_left:2 in
-        Some (`Float (float (int-16)))
+        Ok (`Float (float (int-16)))
 
       (*Static dictionary lookup*)
       | 1::1::0::0::0::_ ->
@@ -328,26 +340,27 @@ module Jsonr = struct
 
       (*Reserved*)
       | 1::1::1::1::1::0::1::1::_ ->
-        None
+        R.error_msg "Parse error: Reserved value"
 
       (*Null*)
       | 1::1::1::1::1::1::0::0::_ -> 
-        Some (`Null)
+        Ok (`Null)
 
       (*False*)
       | 1::1::1::1::1::1::0::1::_ ->
-        Some (`Bool false)
+        Ok (`Bool false)
 
       (*True*)
       | 1::1::1::1::1::1::1::0::_ ->
-        Some (`Bool true)
+        Ok (`Bool true)
 
       (*Reserved*)
       | 1::1::1::1::1::1::1::1::_ ->
-        None
+        R.error_msg "Parse error: Reserved value"
 
       (*... *)
-      | _ -> None
+      | _ ->
+        R.error_msg "Parse error: Unknown value"
 
     let parse_to_json ~static_dictionary ~source =
       let take =
@@ -355,20 +368,21 @@ module Jsonr = struct
         fun n -> stream |> ByteStream.take n
       in
       take 4 >>= fun magic_number' ->
-      assert (magic_number = magic_number');
+      assert_r (magic_number = magic_number') "Magic number" >>= fun () -> 
       take 1 >>= fun version' -> 
-      assert (version = version');
+      assert_r (version = version') "Version" >>= fun () ->
       take 1 >>= fun _reserved -> 
       take 2 >|= int_of_byte_string ~drop_bits_left:4
       >>= fun static_dictionary_size ->
-      assert (static_dictionary_size <= 2048);
-      let ctx =
-        let static_dictionary = Dictionary.make_static
-            ~size:static_dictionary_size
-            static_dictionary
-        and dynamic_dictionary = Dictionary.make_dynamic () in
-        { take; static_dictionary; dynamic_dictionary }
-      in
+      assert_r (static_dictionary_size <= 2048) "Static dictionary size" >>= fun () ->
+      begin
+        Dictionary.make_static ~size:static_dictionary_size static_dictionary
+        >|= fun static_dictionary -> 
+        let dynamic_dictionary = Dictionary.make_dynamic () in
+        { take;
+          static_dictionary;
+          dynamic_dictionary }
+      end >>= fun ctx -> 
       parse_value ~ctx
     
   end
@@ -376,8 +390,6 @@ module Jsonr = struct
 end
 
 (*goto todo;
-  * make option-monad into result-monad 
-    * choose error type; polyvar or msg?
   * insert performance-test code
     * return median + avg time spent on decoding 
     * howto/spec; 
@@ -398,12 +410,12 @@ let run () =
     >|= String.split_on_char ','
     >|= Array.of_list
   in
+  let open CCResult.Infix in
   Jsonr.Bin.parse_to_json ~static_dictionary ~source
   >|= Ezjsonm.value_to_channel Stdlib.stdout
 
 let () = match run () with
-  | Some () -> ()
-  | None ->
-    print_endline "Some error happened"
+  | Ok () -> ()
+  | Error msg -> R.pp_msg Format.std_formatter msg
 
 
