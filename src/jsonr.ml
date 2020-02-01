@@ -12,8 +12,7 @@ type json =
 
 let assert_r test msg =
   if test then Ok () else
-    let msg = "Assertion '"^msg^"' failed" in
-    Error (`Msg msg)
+    R.error_msg @@ "Assertion '"^msg^"' failed"
 
 let catch_r f x ~msg = try Ok (f x) with _ -> R.error_msg msg
 
@@ -65,12 +64,12 @@ module ByteStream = struct
       | `Channel channel -> (
           match really_input_string channel n with
           | exception End_of_file ->
-            R.error_msg "Parse error: End of stream"
+            R.error_msg "End of stream"
           | s -> Ok s
         )
       | `StringStream stream ->
         if stream.offset + n > String.length stream.string then
-          R.error_msg "Parse error: End of stream"
+          R.error_msg "End of stream"
         else
           let chunk = String.sub stream.string stream.offset n in
           stream.offset <- stream.offset + n;
@@ -162,12 +161,13 @@ module Jsonr = struct
 
       let make_static ~size = function
         | None ->
-          assert_r (size = 0) "Static dictionary size" >|= fun () ->
-          (fun _ -> R.error_msg "Parse error: Static dictionary: Wrong index")
+          assert_r (size = 0) "Static dictionary: Wrong size" >|= fun () ->
+          (fun _ -> R.error_msg "Static dictionary: Wrong index")
         | Some dict ->
-          assert_r (size = Array.length dict) "Static dictionary size" >|= fun () ->
+          assert_r (size = Array.length dict)
+            "Static dictionary: Wrong size" >|= fun () ->
           catch_r (fun index -> dict.(index))
-            ~msg:"Parse error: Static dictionary: Wrong index"
+            ~msg:"Static dictionary: Wrong index"
       
       type dynamic = {
         get : int -> (string, R.msg) result;
@@ -175,7 +175,7 @@ module Jsonr = struct
       }
       
       let make_dynamic () =
-        let wrong_index_msg = "Parse error: Dynamic dictionary: Wrong index" in
+        let wrong_index_msg = "Dynamic dictionary: Wrong index" in
         let offset = ref 0 in
         let dict = Array.make 128 "" in
         let get = catch_r (fun index -> dict.(index))
@@ -210,7 +210,7 @@ module Jsonr = struct
           | `String str ->
             ctx.dynamic_dictionary.push str;
             parse_value ~ctx >|= fun json -> (str, json)
-          | _ -> R.error_msg "Parse error: Object key was not a string"
+          | _ -> R.error_msg "Object key was not a string"
         )
       in
       field_results |> CCResult.flatten_l
@@ -340,7 +340,7 @@ module Jsonr = struct
 
       (*Reserved*)
       | 1::1::1::1::1::0::1::1::_ ->
-        R.error_msg "Parse error: Reserved value"
+        R.error_msg "Reserved value"
 
       (*Null*)
       | 1::1::1::1::1::1::0::0::_ -> 
@@ -356,10 +356,10 @@ module Jsonr = struct
 
       (*Reserved*)
       | 1::1::1::1::1::1::1::1::_ ->
-        R.error_msg "Parse error: Reserved value"
+        R.error_msg "Reserved value"
 
       (*... *)
-      | _ -> R.error_msg "Parse error: Unknown value"
+      | _ -> R.error_msg "Unknown value"
 
     let parse_to_json ~static_dictionary ~source =
       let take =
@@ -378,11 +378,15 @@ module Jsonr = struct
         Dictionary.make_static ~size:static_dictionary_size static_dictionary
         >|= fun static_dictionary -> 
         let dynamic_dictionary = Dictionary.make_dynamic () in
-        { take;
+        {
+          take;
           static_dictionary;
-          dynamic_dictionary }
+          dynamic_dictionary
+        }
       end >>= fun ctx -> 
       parse_value ~ctx
+      |> CCResult.map_err (fun (`Msg msg) ->
+        R.msg @@ "Parse error: "^msg)
     
   end
   
@@ -415,6 +419,6 @@ let run () =
 
 let () = match run () with
   | Ok () -> ()
-  | Error msg -> R.pp_msg Format.std_formatter msg
+  | Error msg -> msg |> R.pp_msg Format.std_formatter 
 
 
