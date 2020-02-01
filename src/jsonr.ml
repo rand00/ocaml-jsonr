@@ -175,7 +175,7 @@ module Jsonr = struct
       }
       
       let make_dynamic () =
-        let wrong_index_msg = "Dynamic dictionary: Wrong index" in
+        let wrong_index_msg = "Parse error: Dynamic dictionary: Wrong index" in
         let offset = ref 0 in
         let dict = Array.make 128 "" in
         let get = catch_r (fun index -> dict.(index))
