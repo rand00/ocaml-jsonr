@@ -65,12 +65,12 @@ module ByteStream = struct
       | `Channel channel -> (
           match really_input_string channel n with
           | exception End_of_file ->
-            R.error_msg "End of stream"
+            R.error_msg "Parse error: End of stream"
           | s -> Ok s
         )
       | `StringStream stream ->
         if stream.offset + n > String.length stream.string then
-          R.error_msg "End of stream"
+          R.error_msg "Parse error: End of stream"
         else
           let chunk = String.sub stream.string stream.offset n in
           stream.offset <- stream.offset + n;
@@ -163,11 +163,11 @@ module Jsonr = struct
       let make_static ~size = function
         | None ->
           assert_r (size = 0) "Static dictionary size" >|= fun () ->
-          (fun _ -> R.error_msg "Static dictionary: Wrong index")
+          (fun _ -> R.error_msg "Parse error: Static dictionary: Wrong index")
         | Some dict ->
           assert_r (size = Array.length dict) "Static dictionary size" >|= fun () ->
           catch_r (fun index -> dict.(index))
-            ~msg:"Static dictionary: Wrong index"
+            ~msg:"Parse error: Static dictionary: Wrong index"
       
       type dynamic = {
         get : int -> (string, R.msg) result;
@@ -210,7 +210,7 @@ module Jsonr = struct
           | `String str ->
             ctx.dynamic_dictionary.push str;
             parse_value ~ctx >|= fun json -> (str, json)
-          | _ -> R.error_msg "Object key was not a string"
+          | _ -> R.error_msg "Parse error: Object key was not a string"
         )
       in
       field_results |> CCResult.flatten_l
@@ -359,8 +359,7 @@ module Jsonr = struct
         R.error_msg "Parse error: Reserved value"
 
       (*... *)
-      | _ ->
-        R.error_msg "Parse error: Unknown value"
+      | _ -> R.error_msg "Parse error: Unknown value"
 
     let parse_to_json ~static_dictionary ~source =
       let take =
